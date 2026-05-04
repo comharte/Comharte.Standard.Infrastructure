@@ -1,0 +1,56 @@
+parameters:
+  - name: environmentGroup
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: backendResourceGroup
+    type: string
+  - name: backendStorageAccount
+    type: string
+  - name: organizationCode
+    type: string
+
+steps:
+  - checkout: git://Comharte.Infrastructure/Comharte.Infrastructure.Global
+    displayName: Checkout Terraform Scripts
+    path: infrastructure-global
+
+  - task: TerraformInstaller@1
+    displayName: Install Terraform
+    inputs:
+      terraformVersion: "1.14.8"
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Init
+    inputs:
+      provider: azurerm
+      command: init
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group
+      backendServiceArm: ${{ parameters.serviceConnection }}
+      backendAzureRmResourceGroupName: ${{ parameters.backendResourceGroup }}
+      backendAzureRmStorageAccountName: ${{ parameters.backendStorageAccount }}
+      backendAzureRmContainerName: terraform-states-${{ parameters.environmentGroup }}
+      backendAzureRmKey: ${{ parameters.environmentGroup }}.tfstate
+      backendAzureRmUseAzureAdForAuthentication: true
+      commandOptions: -backend-config=use_azuread_auth=true
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Plan
+    inputs:
+      provider: azurerm
+      command: plan
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group
+      environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+      commandOptions: >-
+        -var="environment_group=${{ parameters.environmentGroup }}"
+        -var="organization_code=${{ parameters.organizationCode }}"
+-out=$(Pipeline.Workspace)/tfplan
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Apply
+    inputs:
+      provider: azurerm
+      command: apply
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group
+      environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+      commandOptions: $(Pipeline.Workspace)/tfplan
