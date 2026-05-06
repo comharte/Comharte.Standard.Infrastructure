@@ -35,3 +35,9 @@ variable "api_service_names" {
   type        = list(string)
   default     = []
 }
+
+variable "ingress_port" {
+  description = "Port the container listens on for HTTP traffic"
+  type        = number
+  default     = 80
+}

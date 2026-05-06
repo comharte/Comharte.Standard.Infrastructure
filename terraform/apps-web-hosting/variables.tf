@@ -42,3 +42,9 @@ variable "image_tag" {
   description = "Docker image tag to deploy"
   type        = string
 }
+
+variable "ingress_port" {
+  description = "Port the container listens on for HTTP traffic"
+  type        = number
+  default     = 80
+}

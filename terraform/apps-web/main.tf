@@ -73,6 +73,7 @@ module "hosting" {
   key_vault_id                    = local.key_vault_id
   app_name                        = var.app_name
   image_tag                       = var.image_tag
+  ingress_port                    = var.ingress_port
 }
 
 resource "azuread_application" "app" {

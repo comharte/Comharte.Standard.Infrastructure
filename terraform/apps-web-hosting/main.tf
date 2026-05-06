@@ -28,7 +28,7 @@ resource "azurerm_container_app" "web" {
 
   ingress {
     external_enabled = true
-    target_port      = 80
+    target_port      = var.ingress_port
 
     traffic_weight {
       latest_revision = true

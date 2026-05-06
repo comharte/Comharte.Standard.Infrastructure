@@ -22,6 +22,9 @@ parameters:
   - name: apiServiceNames
     type: string
     default: '[]'
+  - name: ingressPort
+    type: number
+    default: 80
 
 steps:
   - checkout: infraGlobal
@@ -61,6 +64,7 @@ steps:
         -var="app_name=${{ parameters.appName }}"
         -var="image_tag=${{ parameters.imageTag }}"
         -var="with_hosting=${{ lower(format('{0}', parameters.withHosting)) }}"
+        -var="ingress_port=${{ parameters.ingressPort }}"
         -out=$(Pipeline.Workspace)/tfplan
     env:
       TF_VAR_api_service_names: ${{ parameters.apiServiceNames }}
