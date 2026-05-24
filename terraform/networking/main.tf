@@ -5,9 +5,8 @@ data "azurerm_resource_group" "infrastructure" {
 locals {
   # Stable key derived from public_url, e.g. "dev-home-comharte-com"
   apps_list = [for i, app in var.apps : merge(app, {
-    key            = replace(app.public_url, ".", "-")
-    priority       = 200 + i * 10
-    https_priority = 300 + i * 10
+    key      = replace(app.public_url, ".", "-")
+    priority = 200 + i * 10
   })]
   apps_map = { for app in local.apps_list : app.key => app }
 
@@ -133,9 +132,9 @@ resource "azurerm_application_gateway" "global" {
     }
   }
 
-  # HTTP listeners — one per app (all apps)
+  # HTTP listeners — HTTP-only apps only (HTTPS apps have no HTTP listener)
   dynamic "http_listener" {
-    for_each = local.apps_map
+    for_each = local.apps_http_only
     content {
       name                           = "${http_listener.key}-listener"
       frontend_ip_configuration_name = "frontend-ip-config"
@@ -155,18 +154,6 @@ resource "azurerm_application_gateway" "global" {
       protocol                       = "Https"
       host_name                      = http_listener.value.public_url
       ssl_certificate_name           = http_listener.value.ssl_certificate_name
-    }
-  }
-
-  # Redirect configurations: HTTP → HTTPS, one per HTTPS-enabled app
-  dynamic "redirect_configuration" {
-    for_each = local.apps_https
-    content {
-      name                 = "${redirect_configuration.key}-http-to-https"
-      redirect_type        = "Permanent"
-      target_listener_name = "https-${redirect_configuration.key}-listener"
-      include_path         = true
-      include_query_string = true
     }
   }
 
@@ -210,37 +197,13 @@ resource "azurerm_application_gateway" "global" {
     }
   }
 
-  # HTTP → HTTPS redirect rules for HTTPS apps (path-based)
-  dynamic "request_routing_rule" {
-    for_each = local.apps_with_paths_https
-    content {
-      name                        = "${request_routing_rule.key}-http-rule"
-      rule_type                   = "Basic"
-      priority                    = request_routing_rule.value.priority
-      http_listener_name          = "${request_routing_rule.key}-listener"
-      redirect_configuration_name = "${request_routing_rule.key}-http-to-https"
-    }
-  }
-
-  # HTTP → HTTPS redirect rules for HTTPS apps (basic)
-  dynamic "request_routing_rule" {
-    for_each = local.apps_basic_https
-    content {
-      name                        = "${request_routing_rule.key}-http-rule"
-      rule_type                   = "Basic"
-      priority                    = request_routing_rule.value.priority
-      http_listener_name          = "${request_routing_rule.key}-listener"
-      redirect_configuration_name = "${request_routing_rule.key}-http-to-https"
-    }
-  }
-
   # HTTPS backend routing for HTTPS apps with path rules
   dynamic "request_routing_rule" {
     for_each = local.apps_with_paths_https
     content {
       name               = "https-${request_routing_rule.key}-rule"
       rule_type          = "PathBasedRouting"
-      priority           = request_routing_rule.value.https_priority
+      priority           = request_routing_rule.value.priority
       http_listener_name = "https-${request_routing_rule.key}-listener"
       url_path_map_name  = "https-${request_routing_rule.key}-path-map"
     }
@@ -252,14 +215,14 @@ resource "azurerm_application_gateway" "global" {
     content {
       name                       = "https-${request_routing_rule.key}-rule"
       rule_type                  = "Basic"
-      priority                   = request_routing_rule.value.https_priority
+      priority                   = request_routing_rule.value.priority
       http_listener_name         = "https-${request_routing_rule.key}-listener"
       backend_address_pool_name  = "${request_routing_rule.key}--default-pool"
       backend_http_settings_name = "${request_routing_rule.key}--default-settings"
     }
   }
 
-  # HTTP backend routing for HTTP-only apps with path rules (unchanged)
+  # HTTP backend routing for HTTP-only apps with path rules
   dynamic "request_routing_rule" {
     for_each = local.apps_with_paths_http_only
     content {
@@ -271,7 +234,7 @@ resource "azurerm_application_gateway" "global" {
     }
   }
 
-  # HTTP backend routing for HTTP-only apps (basic, unchanged)
+  # HTTP backend routing for HTTP-only apps (basic)
   dynamic "request_routing_rule" {
     for_each = local.apps_basic_http_only
     content {
