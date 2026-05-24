@@ -11,24 +11,28 @@ Licensed under the [Apache License 2.0](LICENSE).
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        global                           │
-│         Container Registry, Resource Groups             │
+│               Container Registry                        │
 └───────────────────────┬─────────────────────────────────┘
                         │ remote state
           ┌─────────────┴──────────────┐
           │                            │
-┌─────────▼──────────┐      ┌─────────▼──────────┐
-│  environment-group │      │     networking      │
-│  SQL · Service Bus │      │  VNet · App Gateway │
-│  Key Vault · CAE   │      │  Public IP · Subnet │
-└─────────┬──────────┘      └────────────────────┘
-          │ remote state
+┌─────────▼──────────────────────────────────────────────┐
+│                   environment-group                      │
+│  VNet · CAE subnet · CAE (internal) · SQL · Service Bus │
+│  Key Vault · Log Analytics                               │
+└─────────┬──────────────────────────┬────────────────────┘
+          │ remote state             │ remote state
+    ┌─────┴──────┐             ┌─────▼──────┐
+    │            │             │  networking │
+    │   apps-    │             │  AGW subnet │
+    │  service   │             │  Public IP  │
+    │            │             │  AGW · Nginx│
+    └─────┬──────┘             └────────────┘
     ┌─────┴──────┐
+    │  apps-web  │
     │            │
-┌───▼────┐  ┌───▼─────┐
-│apps-   │  │apps-web │
-│service │  │         │
-│        │  │ hosting │
-└────────┘  └─────────┘
+    │  hosting   │
+    └────────────┘
 ```
 
 Resources are split into layers:
@@ -36,8 +40,8 @@ Resources are split into layers:
 | Layer | Module | What it provisions |
 |---|---|---|
 | Global | `global` | Container Registry |
-| Environment group | `environment-group` | SQL Server, Service Bus, Container App Environment, Key Vault, Log Analytics |
-| Networking | `networking` | VNet, subnet, public IP, Application Gateway |
+| Environment group | `environment-group` | VNet, CAE subnet, SQL Server, Service Bus, Container App Environment (internal, VNet-integrated), Key Vault, Log Analytics |
+| Networking | `networking` | AGW subnet, public IP, Application Gateway, Nginx Container App |
 | App — backend | `apps-service` | Managed identity, AAD app registration, SQL database, Service Bus topics, Key Vault secrets |
 | App — frontend | `apps-web` + `apps-web-hosting` | Container App, managed identity, AAD app registration, Key Vault secrets |
 
@@ -116,7 +120,7 @@ Provisions the Container Registry shared across all environments.
 
 ### `environment-group`
 
-Provisions per-environment-group shared infrastructure. Typically deployed once for `nonprod` and once for `prod`.
+Provisions per-environment-group shared infrastructure. Typically deployed once for `nonprod` and once for `prod`. Each environment group is fully network-isolated — VNet, CAE, and all shared resources are scoped to the group.
 
 | Variable | Description |
 |---|---|
@@ -124,7 +128,11 @@ Provisions per-environment-group shared infrastructure. Typically deployed once 
 | `environment_group` | e.g. `nonprod`, `prod` |
 | `is_production` | Controls production-specific behaviour (default: `false`) |
 
-**Resources:** SQL Server (AAD-only auth), Service Bus (Standard), Container App Environment, Log Analytics Workspace (30-day retention), Key Vault (RBAC), self-signed certificate (auto-renewed).
+**Resources:** VNet (`10.0.0.0/8`), CAE subnet (`10.0.1.0/24`), SQL Server (AAD-only auth), Service Bus (Standard), Container App Environment (internal, VNet-integrated), Log Analytics Workspace (30-day retention), Key Vault (RBAC), self-signed certificate (auto-renewed).
+
+**Outputs consumed by `networking`:** `vnet_id`, `cae_subnet_id`, `container_app_environment_id`, `key_vault_id`.
+
+> **Note:** `infrastructure_subnet_id` on the CAE cannot be updated in-place. Changing VNet integration requires destroying and recreating the CAE and all Container Apps within it.
 
 **State key:** `terraform-states-<environment_group>/<environment_group>.tfstate`
 
@@ -132,14 +140,21 @@ Provisions per-environment-group shared infrastructure. Typically deployed once 
 
 ### `networking`
 
-Provisions the virtual network and Application Gateway. Routing rules are generated dynamically from an `apps` variable that maps public hostnames to backend FQDNs.
+Provisions the AGW subnet, Application Gateway, and Nginx Container App. Routing rules are generated dynamically from an `apps` variable that maps public hostnames to backend FQDNs. Reads `vnet_id` from the environment-group remote state.
 
 | Variable | Description |
 |---|---|
-| `organization_code` | Used in resource naming and to locate global remote state |
-| `apps` | List of app routing objects — public URL, routings map (`path → backend FQDN`) |
+| `organization_code` | Used in resource naming and to locate global and environment-group remote state |
+| `environment_group` | e.g. `nonprod`, `prod` |
+| `apps` | List of app routing objects — public URL, routings map (`path → backend FQDN`), optional SSL certificate name |
+| `ssl_certificates` | Map of certificate name to base64-encoded PFX data (sensitive, injected at deploy time) |
 
-**Resources:** VNet (`10.0.0.0/8`), AGW subnet (`10.0.0.0/24`), Standard static public IP, Application Gateway (Basic, capacity 1) with host-based listeners and path-based routing.
+**Resources:** AGW subnet (`10.0.0.0/24`), Standard static public IP, Application Gateway (Basic, capacity 1) with host-based listeners, Nginx Container App (internal, handles per-app path-based routing to backends).
+
+**Traffic flow:**
+```
+Client → AGW (TLS termination, host-based routing) → Nginx (path-based routing) → Backend Container Apps
+```
 
 **State key:** `terraform-states-global/networking.tfstate`
 
@@ -222,7 +237,18 @@ Accepts all global parameters plus `environmentGroup`.
 
 ### `networking-deploy.yml`
 
-Deploys the `networking` module. Requires a pre-generated services networking file that maps app public URLs to backend FQDNs. A helper script (`devops/scripts/networking-rebuild-services-networking-file.ps1`) generates this file by reading Key Vault secrets.
+Deploys the `networking` module. Requires a pre-generated services networking file that maps app public URLs to backend FQDNs. A helper script (`devops/scripts/networking-rebuild-services-networking-file.ps1`) generates this file by reading Key Vault secrets. SSL certificates are injected at deploy time via `devops/scripts/networking-inject-certificates.ps1`.
+
+| Parameter | Description |
+|---|---|
+| `serviceConnection` | Azure DevOps service connection |
+| `backendResourceGroup` | Resource group for Terraform state storage |
+| `backendStorageAccount` | Storage account for Terraform state |
+| `organizationCode` | Full org code |
+| `servicesNetworkingFile` | Path to services-networking.json |
+| `networkingKeyVaults` | Comma-separated Key Vault names for secret resolution |
+| `networkingCertificateKeyVault` | Key Vault containing SSL certificates |
+| `networkingCertificates` | Comma-separated certificate names to inject |
 
 ### `apps-service-infra-deploy.yml`
 
@@ -251,13 +277,16 @@ Variable groups follow the convention `infrastructure-global-<environment_group>
 | Resource type | Pattern |
 |---|---|
 | Resource group | `<organization_code>-infrastructure-global[-<environment_group>]` |
+| Virtual Network | `<organization_code>-vnet-<environment_group>` |
+| CAE subnet | `<organization_code>-cae-subnet-<environment_group>` |
+| AGW subnet | `<organization_code>-agw-subnet-<environment_group>` |
 | SQL Server | `<organization_code>-sql-<environment_group>` |
 | Service Bus | `<organization_code>-sb-<environment_group>` |
 | Container App Environment | `<organization_code>-cae-<environment_group>` |
 | Log Analytics Workspace | `<organization_code>-law-<environment_group>` |
 | Key Vault | `<organization_short_code>-kv-<environment_group>` |
-| App Gateway | `<organization_code>-agw` |
-| Virtual Network | `<organization_code>-vnet` |
+| App Gateway | `<organization_code>-agw-<environment_group>` |
+| Public IP | `<organization_code>-pip-<environment_group>` |
 | Container Registry | `<organization_code>acr` |
 | App (fully qualified) | `<environment>-<organization_code>-<app_name>-<type>` |
 

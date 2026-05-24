@@ -33,3 +33,11 @@ output "certificate_secret_id" {
 output "log_analytics_workspace_id" {
   value = azurerm_log_analytics_workspace.global.id
 }
+
+output "vnet_id" {
+  value = azurerm_virtual_network.global.id
+}
+
+output "cae_subnet_id" {
+  value = azurerm_subnet.cae.id
+}

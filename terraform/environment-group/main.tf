@@ -55,11 +55,20 @@ resource "azurerm_servicebus_namespace" "global" {
   sku                 = "Standard"
 }
 
-# Container Apps Environment
-resource "azurerm_container_app_environment" "global" {
-  name                = "${local.organization_code}-cae-${var.environment_group}"
+# Virtual Network
+resource "azurerm_virtual_network" "global" {
+  name                = "${local.organization_code}-vnet-${var.environment_group}"
   resource_group_name = data.azurerm_resource_group.global.name
   location            = data.azurerm_resource_group.global.location
+  address_space       = ["10.0.0.0/8"]
+}
+
+# CAE subnet — internal load balancer, VNet-integrated
+resource "azurerm_subnet" "cae" {
+  name                 = "${local.organization_code}-cae-subnet-${var.environment_group}"
+  resource_group_name  = data.azurerm_resource_group.global.name
+  virtual_network_name = azurerm_virtual_network.global.name
+  address_prefixes     = ["10.0.1.0/24"]
 }
 
 # Log Analytics Workspace
@@ -69,6 +78,16 @@ resource "azurerm_log_analytics_workspace" "global" {
   location            = data.azurerm_resource_group.global.location
   sku                 = "PerGB2018"
   retention_in_days   = 30
+}
+
+# Container Apps Environment
+resource "azurerm_container_app_environment" "global" {
+  name                           = "${local.organization_code}-cae-${var.environment_group}"
+  resource_group_name            = data.azurerm_resource_group.global.name
+  location                       = data.azurerm_resource_group.global.location
+  infrastructure_subnet_id       = azurerm_subnet.cae.id
+  internal_load_balancer_enabled = true
+  log_analytics_workspace_id     = azurerm_log_analytics_workspace.global.id
 }
 
 # Key Vault
