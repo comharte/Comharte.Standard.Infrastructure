@@ -1,0 +1,74 @@
+parameters:
+  - name: serviceConnection
+    type: string
+  - name: backendResourceGroup
+    type: string
+  - name: backendStorageAccount
+    type: string
+  - name: organizationCode
+    type: string
+  - name: environmentGroup
+    type: string
+  - name: listeners
+    type: string
+    displayName: "JSON array of public listener URLs e.g. [\"https://comharte.com\",\"http://example.com\"]"
+  - name: nginxConfigFile
+    type: string
+    displayName: "Path to nginx.conf file"
+
+steps:
+  - checkout: infraGlobal
+    displayName: Checkout Terraform Scripts
+    path: infrastructure-global
+
+  - task: TerraformInstaller@1
+    displayName: Install Terraform
+    inputs:
+      terraformVersion: "1.14.8"
+
+  - pwsh: |
+      $listeners = '${{ parameters.listeners }}'
+      @{ listeners = ($listeners | ConvertFrom-Json) } | ConvertTo-Json -Depth 3 | Set-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/listeners.auto.tfvars.json" -Encoding UTF8
+      Write-Host "[OK] Written listeners.auto.tfvars.json"
+    displayName: Write listeners tfvars
+
+  - pwsh: |
+      $content = Get-Content "${{ parameters.nginxConfigFile }}" -Raw
+      @{ nginx_config = $content } | ConvertTo-Json -Depth 1 | Set-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/nginx_config.auto.tfvars.json" -Encoding UTF8
+      Write-Host "[OK] Written nginx_config.auto.tfvars.json"
+    displayName: Write nginx config tfvars
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Init
+    inputs:
+      provider: azurerm
+      command: init
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/network-routing
+      backendServiceArm: ${{ parameters.serviceConnection }}
+      backendAzureRmResourceGroupName: ${{ parameters.backendResourceGroup }}
+      backendAzureRmStorageAccountName: ${{ parameters.backendStorageAccount }}
+      backendAzureRmContainerName: terraform-states-${{ parameters.environmentGroup }}
+      backendAzureRmKey: network-routing.tfstate
+      backendAzureRmUseAzureAdForAuthentication: true
+      commandOptions: -backend-config=use_azuread_auth=true
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Plan
+    inputs:
+      provider: azurerm
+      command: plan
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/network-routing
+      environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+      commandOptions: >-
+        -var="organization_code=${{ parameters.organizationCode }}"
+        -var="environment_group=${{ parameters.environmentGroup }}"
+        -out=$(Pipeline.Workspace)/tfplan
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Apply
+    inputs:
+      provider: azurerm
+      command: apply
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/network-routing
+      environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+      commandOptions: $(Pipeline.Workspace)/tfplan
