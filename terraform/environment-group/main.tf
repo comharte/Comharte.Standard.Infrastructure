@@ -87,6 +87,7 @@ resource "azurerm_container_app_environment" "global" {
   location                       = data.azurerm_resource_group.global.location
   infrastructure_subnet_id       = azurerm_subnet.cae.id
   internal_load_balancer_enabled = true
+  public_network_access_enabled  = false
   log_analytics_workspace_id     = azurerm_log_analytics_workspace.global.id
 }
 
