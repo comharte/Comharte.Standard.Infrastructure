@@ -15,6 +15,9 @@ parameters:
   - name: nginxConfigFile
     type: string
     displayName: "Path to nginx.conf file"
+  - name: networkingKeyVault
+    type: string
+    displayName: "Key Vault name to resolve nginx.conf placeholders from"
 
 steps:
   - checkout: infraGlobal
@@ -32,8 +35,20 @@ steps:
       Write-Host "[OK] Written listeners.auto.tfvars.json"
     displayName: Write listeners tfvars
 
+  - task: AzureCLI@2
+    displayName: Resolve nginx.conf placeholders and write tfvars
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: pscore
+      scriptLocation: scriptPath
+      scriptPath: $(Pipeline.Workspace)/infrastructure-global/devops/scripts/networking-rebuild-services-networking-file.ps1
+      arguments: >-
+        -NetworkingFile "${{ parameters.nginxConfigFile }}"
+        -KeyVaults      "${{ parameters.networkingKeyVault }}"
+        -OutputFile     "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/nginx.conf.resolved"
+
   - pwsh: |
-      $content = Get-Content "${{ parameters.nginxConfigFile }}" -Raw
+      $content = Get-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/nginx.conf.resolved" -Raw
       @{ nginx_config = $content } | ConvertTo-Json -Depth 1 | Set-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/nginx_config.auto.tfvars.json" -Encoding UTF8
       Write-Host "[OK] Written nginx_config.auto.tfvars.json"
     displayName: Write nginx config tfvars
