@@ -69,6 +69,14 @@ resource "azurerm_subnet" "cae" {
   resource_group_name  = data.azurerm_resource_group.global.name
   virtual_network_name = azurerm_virtual_network.global.name
   address_prefixes     = ["10.0.1.0/24"]
+
+  delegation {
+    name = "Microsoft.App/environments"
+    service_delegation {
+      name = "Microsoft.App/environments"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
 }
 
 # Log Analytics Workspace
