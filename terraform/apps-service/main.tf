@@ -1,36 +1,23 @@
-data "terraform_remote_state" "global" {
-  backend = "azurerm"
-  config = {
-    resource_group_name  = "${var.organization_code}-infrastructure-global"
-    storage_account_name = "${var.organization_code}tfstates"
-    container_name       = "terraform-states-global"
-    key                  = "global.tfstate"
-    use_azuread_auth     = true
-  }
-}
-
 data "terraform_remote_state" "environment_group" {
   backend = "azurerm"
   config = {
-    resource_group_name  = "${var.organization_code}-infrastructure-global"
-    storage_account_name = "${var.organization_code}tfstates"
+    resource_group_name  = var.backend_resource_group
+    storage_account_name = var.backend_storage_account
     container_name       = "terraform-states-${var.environment_group}"
-    key                  = "${var.environment_group}.tfstate"
+    key                  = "environment-group.tfstate"
     use_azuread_auth     = true
   }
 }
 
 locals {
-  organization_code               = data.terraform_remote_state.global.outputs.organization_code
-  organization_short_code         = data.terraform_remote_state.global.outputs.organization_short_code
-  container_registry_login_server = data.terraform_remote_state.global.outputs.container_registry_login_server
-  container_registry_id           = data.terraform_remote_state.global.outputs.container_registry_id
-  container_app_environment_id    = data.terraform_remote_state.environment_group.outputs.container_app_environment_id
-  resource_group_name             = data.terraform_remote_state.environment_group.outputs.resource_group_name
-  is_production                   = data.terraform_remote_state.environment_group.outputs.is_production
-  key_vault_id                    = data.terraform_remote_state.environment_group.outputs.key_vault_id
-  log_analytics_workspace_id      = data.terraform_remote_state.environment_group.outputs.log_analytics_workspace_id
-  app_fully_qualified_name        = "${var.environment}-${local.organization_code}-${var.app_name}-service"
+  organization_code          = data.terraform_remote_state.environment_group.outputs.organization_code
+  container_registry_id      = data.terraform_remote_state.environment_group.outputs.container_registry_id
+  resource_group_name        = data.terraform_remote_state.environment_group.outputs.resource_group_name
+  location                   = data.terraform_remote_state.environment_group.outputs.resource_group_location
+  is_production              = data.terraform_remote_state.environment_group.outputs.is_production
+  key_vault_id               = data.terraform_remote_state.environment_group.outputs.key_vault_id
+  log_analytics_workspace_id = data.terraform_remote_state.environment_group.outputs.log_analytics_workspace_id
+  app_fully_qualified_name     = "${var.environment}-${var.app_name}-service"
   app_identity_ids = merge(
     { "managed-identity" = azurerm_user_assigned_identity.app.principal_id },
     local.is_production ? {} : { "service-principal" = azuread_service_principal.app.object_id }
@@ -39,20 +26,16 @@ locals {
 
 data "azurerm_key_vault_certificate_data" "app" {
   count        = local.is_production ? 0 : 1
-  name         = "${local.organization_short_code}-${var.environment_group}-cert"
+  name         = "${local.organization_code}-${var.environment_group}-cert"
   key_vault_id = local.key_vault_id
 }
 
-data "azurerm_resource_group" "global" {
-  name = local.resource_group_name
-}
-
-data "azurerm_mssql_server" "global" {
+data "azurerm_mssql_server" "environment_group" {
   name                = "${local.organization_code}-sql-${var.environment_group}"
   resource_group_name = local.resource_group_name
 }
 
-data "azurerm_servicebus_namespace" "global" {
+data "azurerm_servicebus_namespace" "environment_group" {
   name                = "${local.organization_code}-sb-${var.environment_group}"
   resource_group_name = local.resource_group_name
 }
@@ -60,7 +43,7 @@ data "azurerm_servicebus_namespace" "global" {
 resource "azurerm_user_assigned_identity" "app" {
   name                = "${local.app_fully_qualified_name}-identity"
   resource_group_name = local.resource_group_name
-  location            = data.azurerm_resource_group.global.location
+  location            = local.location
 }
 
 resource "azurerm_role_assignment" "app_acr_pull" {
@@ -148,39 +131,39 @@ resource "azuread_app_role_assignment" "app_trusted_service_self" {
 resource "azurerm_application_insights" "app" {
   name                = local.app_fully_qualified_name
   resource_group_name = local.resource_group_name
-  location            = data.azurerm_resource_group.global.location
+  location            = local.location
   workspace_id        = local.log_analytics_workspace_id
   application_type    = "web"
 }
 
 resource "azurerm_mssql_database" "app" {
   name      = local.app_fully_qualified_name
-  server_id = data.azurerm_mssql_server.global.id
+  server_id = data.azurerm_mssql_server.environment_group.id
   sku_name  = "Basic"
 }
 
 resource "azurerm_role_assignment" "app_servicebus_writer" {
   for_each             = local.app_identity_ids
-  scope                = data.azurerm_servicebus_namespace.global.id
+  scope                = data.azurerm_servicebus_namespace.environment_group.id
   role_definition_name = "Azure Service Bus Data Sender"
   principal_id         = each.value
 }
 
 resource "azurerm_role_assignment" "app_servicebus_reader" {
   for_each             = local.app_identity_ids
-  scope                = data.azurerm_resource_group.global.id
+  scope                = data.azurerm_servicebus_namespace.environment_group.id
   role_definition_name = "Azure Service Bus Data Receiver"
   principal_id         = each.value
 }
 
 resource "azurerm_servicebus_topic" "global_events" {
   name         = "${local.app_fully_qualified_name}-global-events"
-  namespace_id = data.azurerm_servicebus_namespace.global.id
+  namespace_id = data.azurerm_servicebus_namespace.environment_group.id
 }
 
 resource "azurerm_servicebus_topic" "internal_processing" {
   name         = "${local.app_fully_qualified_name}-internal-processing"
-  namespace_id = data.azurerm_servicebus_namespace.global.id
+  namespace_id = data.azurerm_servicebus_namespace.environment_group.id
 }
 
 resource "azurerm_servicebus_subscription" "internal_processing" {

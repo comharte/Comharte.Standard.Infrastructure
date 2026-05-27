@@ -3,6 +3,22 @@ variable "app_fully_qualified_name" {
   type        = string
 }
 
+variable "app_name" {
+  description = "Application name used as the container image name"
+  type        = string
+}
+
+variable "image_tag" {
+  description = "Docker image tag to deploy"
+  type        = string
+}
+
+variable "ingress_port" {
+  description = "Port the container listens on for HTTP traffic"
+  type        = number
+  default     = 80
+}
+
 variable "resource_group_name" {
   description = "Name of the resource group to deploy into"
   type        = string
@@ -31,20 +47,4 @@ variable "container_app_environment_id" {
 variable "key_vault_id" {
   description = "ID of the key vault to write secrets to"
   type        = string
-}
-
-variable "app_name" {
-  description = "Application name used as the container image name"
-  type        = string
-}
-
-variable "image_tag" {
-  description = "Docker image tag to deploy"
-  type        = string
-}
-
-variable "ingress_port" {
-  description = "Port the container listens on for HTTP traffic"
-  type        = number
-  default     = 80
 }

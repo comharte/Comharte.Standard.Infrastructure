@@ -5,14 +5,13 @@ parameters:
     type: string
   - name: backendStorageAccount
     type: string
-  - name: organizationCode
+  - name: listeners
     type: string
-  - name: organizationShortCode
-    type: string
+    displayName: "JSON object mapping listener URL to environment group e.g. {\"https://comharte.com\":\"prod\",\"https://staging.comharte.com\":\"nonprod\"}"
 
 steps:
-  - checkout: infraGlobal
-    displayName: Checkout Terraform Scripts
+  - checkout: git://Comharte.Standard/Comharte.Standard.Infrastructure
+    displayName: Checkout Infrastructure
     path: infrastructure-global
 
   - task: TerraformInstaller@1
@@ -20,17 +19,24 @@ steps:
     inputs:
       terraformVersion: "1.14.8"
 
+  - pwsh: |
+      $listeners = '${{ parameters.listeners }}'
+      @{ listeners = ($listeners | ConvertFrom-Json -AsHashtable) } | ConvertTo-Json -Depth 3 |
+        Set-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/global-network-routing/listeners.auto.tfvars.json" -Encoding UTF8
+      Write-Host "[OK] Written listeners.auto.tfvars.json"
+    displayName: Write listeners tfvars
+
   - task: TerraformTaskV4@4
     displayName: Terraform Init
     inputs:
       provider: azurerm
       command: init
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global-network-routing
       backendServiceArm: ${{ parameters.serviceConnection }}
       backendAzureRmResourceGroupName: ${{ parameters.backendResourceGroup }}
       backendAzureRmStorageAccountName: ${{ parameters.backendStorageAccount }}
       backendAzureRmContainerName: terraform-states-global
-      backendAzureRmKey: global.tfstate
+      backendAzureRmKey: global-network-routing.tfstate
       backendAzureRmUseAzureAdForAuthentication: true
       commandOptions: -backend-config=use_azuread_auth=true
 
@@ -39,11 +45,11 @@ steps:
     inputs:
       provider: azurerm
       command: plan
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global-network-routing
       environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
       commandOptions: >-
-        -var="organization_code=${{ parameters.organizationCode }}"
-        -var="organization_short_code=${{ parameters.organizationShortCode }}"
+        -var="backend_resource_group=${{ parameters.backendResourceGroup }}"
+        -var="backend_storage_account=${{ parameters.backendStorageAccount }}"
         -out=$(Pipeline.Workspace)/tfplan
 
   - task: TerraformTaskV4@4
@@ -51,6 +57,6 @@ steps:
     inputs:
       provider: azurerm
       command: apply
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global-network-routing
       environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
       commandOptions: $(Pipeline.Workspace)/tfplan

@@ -5,8 +5,6 @@ parameters:
     type: string
   - name: backendStorageAccount
     type: string
-  - name: organizationCode
-    type: string
   - name: environmentGroup
     type: string
   - name: environment
@@ -16,10 +14,11 @@ parameters:
   - name: systemAdministratorUpns
     type: object
     default: []
+    displayName: "List of AAD UPNs to add as db_owner in addition to the managed identity"
 
 steps:
-  - checkout: infraGlobal
-    displayName: Checkout Terraform Scripts
+  - checkout: git://Comharte.Standard/Comharte.Standard.Infrastructure
+    displayName: Checkout Infrastructure
     path: infrastructure-global
 
   - task: TerraformInstaller@1
@@ -49,7 +48,8 @@ steps:
       workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/apps-service
       environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
       commandOptions: >-
-        -var="organization_code=${{ parameters.organizationCode }}"
+        -var="backend_resource_group=${{ parameters.backendResourceGroup }}"
+        -var="backend_storage_account=${{ parameters.backendStorageAccount }}"
         -var="environment_group=${{ parameters.environmentGroup }}"
         -var="environment=${{ parameters.environment }}"
         -var="app_name=${{ parameters.appName }}"

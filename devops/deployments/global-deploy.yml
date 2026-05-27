@@ -1,0 +1,52 @@
+parameters:
+  - name: serviceConnection
+    type: string
+  - name: backendResourceGroup
+    type: string
+  - name: backendStorageAccount
+    type: string
+
+steps:
+  - checkout: git://Comharte.Standard/Comharte.Standard.Infrastructure
+    displayName: Checkout Infrastructure
+    path: infrastructure-global
+
+  - task: TerraformInstaller@1
+    displayName: Install Terraform
+    inputs:
+      terraformVersion: "1.14.8"
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Init
+    inputs:
+      provider: azurerm
+      command: init
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global
+      backendServiceArm: ${{ parameters.serviceConnection }}
+      backendAzureRmResourceGroupName: ${{ parameters.backendResourceGroup }}
+      backendAzureRmStorageAccountName: ${{ parameters.backendStorageAccount }}
+      backendAzureRmContainerName: terraform-states-global
+      backendAzureRmKey: global.tfstate
+      backendAzureRmUseAzureAdForAuthentication: true
+      commandOptions: -backend-config=use_azuread_auth=true
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Plan
+    inputs:
+      provider: azurerm
+      command: plan
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global
+      environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+      commandOptions: >-
+        -var="backend_resource_group=${{ parameters.backendResourceGroup }}"
+        -var="backend_storage_account=${{ parameters.backendStorageAccount }}"
+        -out=$(Pipeline.Workspace)/tfplan
+
+  - task: TerraformTaskV4@4
+    displayName: Terraform Apply
+    inputs:
+      provider: azurerm
+      command: apply
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/global
+      environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+      commandOptions: $(Pipeline.Workspace)/tfplan

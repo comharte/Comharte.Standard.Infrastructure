@@ -5,35 +5,24 @@ parameters:
     type: string
   - name: backendStorageAccount
     type: string
-  - name: organizationCode
-    type: string
   - name: environmentGroup
     type: string
-  - name: listeners
-    type: string
-    displayName: "JSON array of public listener URLs e.g. [\"https://comharte.com\",\"http://example.com\"]"
   - name: nginxConfigFile
     type: string
-    displayName: "Path to nginx.conf file"
-  - name: networkingKeyVault
+    displayName: "Path to nginx.conf file (may contain {{SecretName}} placeholders)"
+  - name: keyVaults
     type: string
-    displayName: "Key Vault name to resolve nginx.conf placeholders from"
+    displayName: "Comma-separated Key Vault names to resolve nginx.conf placeholders from"
 
 steps:
-  - checkout: infraGlobal
-    displayName: Checkout Terraform Scripts
+  - checkout: git://Comharte.Standard/Comharte.Standard.Infrastructure
+    displayName: Checkout Infrastructure
     path: infrastructure-global
 
   - task: TerraformInstaller@1
     displayName: Install Terraform
     inputs:
       terraformVersion: "1.14.8"
-
-  - pwsh: |
-      $listeners = '${{ parameters.listeners }}'
-      @{ listeners = ($listeners | ConvertFrom-Json) } | ConvertTo-Json -Depth 3 | Set-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/listeners.auto.tfvars.json" -Encoding UTF8
-      Write-Host "[OK] Written listeners.auto.tfvars.json"
-    displayName: Write listeners tfvars
 
   - task: AzureCLI@2
     displayName: Resolve nginx.conf placeholders and write tfvars
@@ -44,12 +33,13 @@ steps:
       scriptPath: $(Pipeline.Workspace)/infrastructure-global/devops/scripts/networking-rebuild-services-networking-file.ps1
       arguments: >-
         -NetworkingFile "${{ parameters.nginxConfigFile }}"
-        -KeyVaults      "${{ parameters.networkingKeyVault }}"
-        -OutputFile     "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/nginx.conf.resolved"
+        -KeyVaults      "${{ parameters.keyVaults }}"
+        -OutputFile     "$(Pipeline.Workspace)/infrastructure-global/terraform/environment-group-network-routing/nginx.conf.resolved"
 
   - pwsh: |
-      $content = Get-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/nginx.conf.resolved" -Raw
-      @{ nginx_config = $content } | ConvertTo-Json -Depth 1 | Set-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/network-routing/nginx_config.auto.tfvars.json" -Encoding UTF8
+      $content = Get-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/environment-group-network-routing/nginx.conf.resolved" -Raw
+      @{ nginx_config = $content } | ConvertTo-Json -Depth 1 |
+        Set-Content "$(Pipeline.Workspace)/infrastructure-global/terraform/environment-group-network-routing/nginx_config.auto.tfvars.json" -Encoding UTF8
       Write-Host "[OK] Written nginx_config.auto.tfvars.json"
     displayName: Write nginx config tfvars
 
@@ -58,12 +48,12 @@ steps:
     inputs:
       provider: azurerm
       command: init
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/network-routing
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group-network-routing
       backendServiceArm: ${{ parameters.serviceConnection }}
       backendAzureRmResourceGroupName: ${{ parameters.backendResourceGroup }}
       backendAzureRmStorageAccountName: ${{ parameters.backendStorageAccount }}
       backendAzureRmContainerName: terraform-states-${{ parameters.environmentGroup }}
-      backendAzureRmKey: network-routing.tfstate
+      backendAzureRmKey: environment-group-network-routing.tfstate
       backendAzureRmUseAzureAdForAuthentication: true
       commandOptions: -backend-config=use_azuread_auth=true
 
@@ -72,10 +62,11 @@ steps:
     inputs:
       provider: azurerm
       command: plan
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/network-routing
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group-network-routing
       environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
       commandOptions: >-
-        -var="organization_code=${{ parameters.organizationCode }}"
+        -var="backend_resource_group=${{ parameters.backendResourceGroup }}"
+        -var="backend_storage_account=${{ parameters.backendStorageAccount }}"
         -var="environment_group=${{ parameters.environmentGroup }}"
         -out=$(Pipeline.Workspace)/tfplan
 
@@ -84,6 +75,6 @@ steps:
     inputs:
       provider: azurerm
       command: apply
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/network-routing
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group-network-routing
       environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
       commandOptions: $(Pipeline.Workspace)/tfplan

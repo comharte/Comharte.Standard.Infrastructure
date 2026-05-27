@@ -3,15 +3,15 @@ output "app_identity_ids" {
 }
 
 output "sql_server_fqdn" {
-  value = data.azurerm_mssql_server.global.fully_qualified_domain_name
+  value = data.azurerm_mssql_server.environment_group.fully_qualified_domain_name
 }
 
 output "sql_server_name" {
-  value = data.azurerm_mssql_server.global.name
+  value = data.azurerm_mssql_server.environment_group.name
 }
 
 output "sql_server_resource_group" {
-  value = data.azurerm_mssql_server.global.resource_group_name
+  value = data.azurerm_mssql_server.environment_group.resource_group_name
 }
 
 output "database_name" {

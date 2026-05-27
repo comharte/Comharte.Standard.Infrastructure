@@ -5,30 +5,17 @@ parameters:
     type: string
   - name: backendStorageAccount
     type: string
-  - name: organizationCode
-    type: string
   - name: environmentGroup
     type: string
-  - name: environment
+  - name: caeSubnetCidr
     type: string
-  - name: appName
-    type: string
-  - name: imageTag
-    type: string
-    default: ""
-  - name: withHosting
+  - name: isProduction
     type: boolean
-    default: true
-  - name: apiServiceNames
-    type: string
-    default: '[]'
-  - name: ingressPort
-    type: number
-    default: 80
+    default: false
 
 steps:
-  - checkout: infraGlobal
-    displayName: Checkout Terraform Scripts
+  - checkout: git://Comharte.Standard/Comharte.Standard.Infrastructure
+    displayName: Checkout Infrastructure
     path: infrastructure-global
 
   - task: TerraformInstaller@1
@@ -41,12 +28,12 @@ steps:
     inputs:
       provider: azurerm
       command: init
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/apps-web
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group
       backendServiceArm: ${{ parameters.serviceConnection }}
       backendAzureRmResourceGroupName: ${{ parameters.backendResourceGroup }}
       backendAzureRmStorageAccountName: ${{ parameters.backendStorageAccount }}
       backendAzureRmContainerName: terraform-states-${{ parameters.environmentGroup }}
-      backendAzureRmKey: apps-web-${{ parameters.appName }}-${{ parameters.environment }}.tfstate
+      backendAzureRmKey: environment-group.tfstate
       backendAzureRmUseAzureAdForAuthentication: true
       commandOptions: -backend-config=use_azuread_auth=true
 
@@ -55,25 +42,21 @@ steps:
     inputs:
       provider: azurerm
       command: plan
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/apps-web
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group
       environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
       commandOptions: >-
-        -var="organization_code=${{ parameters.organizationCode }}"
+        -var="backend_resource_group=${{ parameters.backendResourceGroup }}"
+        -var="backend_storage_account=${{ parameters.backendStorageAccount }}"
         -var="environment_group=${{ parameters.environmentGroup }}"
-        -var="environment=${{ parameters.environment }}"
-        -var="app_name=${{ parameters.appName }}"
-        -var="image_tag=${{ parameters.imageTag }}"
-        -var="with_hosting=${{ lower(format('{0}', parameters.withHosting)) }}"
-        -var="ingress_port=${{ parameters.ingressPort }}"
+        -var="cae_subnet_cidr=${{ parameters.caeSubnetCidr }}"
+        -var="is_production=${{ lower(format('{0}', parameters.isProduction)) }}"
         -out=$(Pipeline.Workspace)/tfplan
-    env:
-      TF_VAR_api_service_names: ${{ parameters.apiServiceNames }}
 
   - task: TerraformTaskV4@4
     displayName: Terraform Apply
     inputs:
       provider: azurerm
       command: apply
-      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/apps-web
+      workingDirectory: $(Pipeline.Workspace)/infrastructure-global/terraform/environment-group
       environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
       commandOptions: $(Pipeline.Workspace)/tfplan

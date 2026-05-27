@@ -13,12 +13,8 @@ variable "environment_group" {
   type        = string
 }
 
-variable "environment" {
-  description = "Environment name (e.g. dev, test, prod)"
+variable "nginx_config" {
+  description = "Raw Nginx configuration file content. Injected as a Container App secret and mounted at /etc/nginx/nginx.conf."
   type        = string
-}
-
-variable "app_name" {
-  description = "Application name used in resource naming and as the container image name"
-  type        = string
+  default     = ""
 }
