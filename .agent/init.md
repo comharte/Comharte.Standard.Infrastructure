@@ -29,13 +29,15 @@ This script bootstraps the foundational Azure resources that everything else dep
    - Container Registry `<OrganizationName>acr` — shared ACR for all environments
    - Subscription-level RBAC for the managed identity: Contributor, User Access Administrator, Network Contributor, Key Vault Secrets Officer, Key Vault Certificates Officer, Storage Blob Data Contributor
 
-**Download and run the script:**
-```powershell
-Invoke-WebRequest `
-    -Uri "https://dev.azure.com/comharte/Comharte.Standard/_apis/git/repositories/Comharte.Standard.Infrastructure/items?path=/devops/scripts/global-admin-deploy.ps1&api-version=7.1&download=true" `
-    -OutFile "global-admin-deploy.ps1"
+**Clone the repo and run the script:**
 
-.\global-admin-deploy.ps1 `
+The script uses `$PSScriptRoot` to locate the `terraform/global-admin` directory relative to itself. It must run from inside the repo — downloading the file alone would leave `$PSScriptRoot` pointing at an arbitrary location with no Terraform files beside it.
+
+```powershell
+git clone https://dev.azure.com/comharte/Comharte.Standard/_git/Comharte.Standard.Infrastructure
+cd Comharte.Standard.Infrastructure
+
+.\devops\scripts\global-admin-deploy.ps1 `
     -OrganizationName <full-org-name> `
     -OrganizationCode <short-org-code>
 ```
