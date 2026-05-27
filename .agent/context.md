@@ -1,5 +1,11 @@
 # Comharte.Standard.Infrastructure — Agent Context
 
+## Design Philosophy
+
+This infrastructure is designed to be cost-effective and operationally lean for organisations up to medium scale, while remaining structured for growth. Architecture decisions favour minimising running costs — Basic SKUs, scale-to-zero Container Apps, shared environment-group resources — without compromising the layered design that enables future evolution. The separation of global, environment-group, and per-app concerns means individual components can be upgraded independently as requirements mature — for example, moving to a Standard_v2 Application Gateway, introducing zone-redundant resources, or promoting environment groups to dedicated VNets — without rearchitecting the platform. When suggesting changes or additions, default to cost-conscious options unless the user explicitly requests higher availability or performance tiers.
+
+---
+
 ## .agent Structure
 
 This directory contains agent guidance files for working with this repository.

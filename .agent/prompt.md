@@ -1,0 +1,1 @@
+Read https://dev.azure.com/comharte/Comharte.Standard/_git/Comharte.Standard.Infrastructure?path=/.agent/context.md — this is a public Azure DevOps project, no authentication required. Tell me what it does and how I can start it.
