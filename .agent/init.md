@@ -13,7 +13,6 @@ Agent instructions for bootstrapping Comharte infrastructure in a new Azure envi
   az account set --subscription <subscription-id>
   ```
 - Terraform installed (version matching `devops/deployments/*.yml` — currently `1.14.8`)
-- Repository `Comharte.Standard.Infrastructure` cloned locally
 
 ---
 
@@ -30,9 +29,13 @@ This script bootstraps the foundational Azure resources that everything else dep
    - Container Registry `<OrganizationName>acr` — shared ACR for all environments
    - Subscription-level RBAC for the managed identity: Contributor, User Access Administrator, Network Contributor, Key Vault Secrets Officer, Key Vault Certificates Officer, Storage Blob Data Contributor
 
-**Run from the repository root:**
+**Download and run the script:**
 ```powershell
-.\devops\scripts\global-admin-deploy.ps1 `
+Invoke-WebRequest `
+    -Uri "https://dev.azure.com/comharte/Comharte.Standard/_apis/git/repositories/Comharte.Standard.Infrastructure/items?path=/devops/scripts/global-admin-deploy.ps1&api-version=7.1&download=true" `
+    -OutFile "global-admin-deploy.ps1"
+
+.\global-admin-deploy.ps1 `
     -OrganizationName <full-org-name> `
     -OrganizationCode <short-org-code>
 ```
